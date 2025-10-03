@@ -11,11 +11,8 @@ contract IssuanceOfDocument {
     // Document structure
     struct Document {
         string documentHash;
-        address issuer;
-        uint256 issuedAt;
-        mapping(address => bool) signatures;
+        uint256 createdAt;
         address signedBy;
-        bool isFinalized;
     }
 
     mapping(bytes32 => Document) public documents;
@@ -25,7 +22,6 @@ contract IssuanceOfDocument {
     event OwnerChanged(address indexed oldOwner, address indexed newOwner);
     event SignerAdded(address indexed signer);
     event SignerRemoved(address indexed signer);
-    event DocumentIssued(bytes32 indexed documentId, string documentHash, address indexed issuer);
     event DocumentSigned(bytes32 indexed documentId, address indexed signer);
 
     constructor() {
@@ -88,69 +84,40 @@ contract IssuanceOfDocument {
     }
 
     // handle document
-    
-    function issueDocument(string memory _documentHash) public onlyOwner returns (bytes32) {
-        bytes32 docId = keccak256(abi.encodePacked(_documentHash, block.timestamp, msg.sender));
+
+    function signDocument(string memory _documentHash) public onlySigner {
+        bytes32 docId = keccak256(abi.encodePacked(_documentHash));
         
-        require(documents[docId].issuedAt == 0, "Document already exists");
+        require(documents[docId].createdAt == 0, "Document already exists");
         
         Document storage doc = documents[docId];
         doc.documentHash = _documentHash;
-        doc.issuer = msg.sender;
-        doc.issuedAt = block.timestamp;
-        doc.isFinalized = false;
+        doc.createdAt = block.timestamp;
         
         documentIds.push(docId);
         
-        emit DocumentIssued(docId, _documentHash, msg.sender);
-        return docId;
-    }
-
-    function signDocument(bytes32 _documentId) public onlySigner {
-        Document storage doc = documents[_documentId];
-        
-        require(doc.issuedAt != 0, "Document does not exist");
-        require(!doc.isFinalized, "Document already finalized");
-        require(!doc.signatures[msg.sender], "Already signed");
-        
-        doc.signatures[msg.sender] = true;
         doc.signedBy = msg.sender;
-
-        finalizeDocument(_documentId);
         
-        emit DocumentSigned(_documentId, msg.sender);
-    }
-
-    function finalizeDocument(bytes32 _documentId) public onlySigner {
-        Document storage doc = documents[_documentId];
-        
-        require(doc.issuedAt != 0, "Document does not exist");
-        require(!doc.isFinalized, "Document already finalized");
-        
-        doc.isFinalized = true;
+        emit DocumentSigned(docId, msg.sender);
     }
 
     function getDocumentInfo(bytes32 _documentId) public view returns (
         string memory documentHash,
-        address issuer,
-        uint256 issuedAt,
-        address signedBy,
-        bool isFinalized
+        uint256 createdAt,
+        address signedBy
     ) {
         Document storage doc = documents[_documentId];
-        require(doc.issuedAt != 0, "Document does not exist");
+        require(doc.createdAt != 0, "Document does not exist");
         
         return (
             doc.documentHash,
-            doc.issuer,
-            doc.issuedAt,
-            doc.signedBy,
-            doc.isFinalized
+            doc.createdAt,
+            doc.signedBy
         );
     }
 
     function hasSignedDocument(bytes32 _documentId, address _signer) public view returns (bool) {
-        return documents[_documentId].signatures[_signer];
+        return documents[_documentId].signedBy == _signer;
     }
 
     function getDocumentCount() public view returns (uint) {
