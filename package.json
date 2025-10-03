@@ -1,10 +1,22 @@
 {
   "name": "hardhat-project",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run scripts/deploy.ts",
+    "deploy:factory": "hardhat run scripts/deploy-factory.ts",
+    "verify": "npx hardhat verify --network sepolia",
+    "setup": "hardhat run scripts/setup.ts",
+    "deploy:localhost": "hardhat run scripts/deploy.ts --network localhost",
+    "deploy:testnet": "hardhat run scripts/deploy.ts --network sepolia",
+    "node": "hardhat node"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "hardhat": "^2.26.3"
   },
   "dependencies": {
+    "dotenv": "^17.2.3",
     "openzeppelin": "^1.0.0"
   }
 }
