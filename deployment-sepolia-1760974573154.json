@@ -1,9 +1,9 @@
 {
   "metadata": {
-    "network": "hardhat",
-    "chainId": "1337",
-    "deployedAt": "2025-10-20T15:30:40.396Z",
-    "deployerAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "network": "sepolia",
+    "chainId": "11155111",
+    "deployedAt": "2025-10-20T15:36:13.154Z",
+    "deployerAddress": "0xC9c768801552B860bD74FB2Db060342ce48dc7CA",
     "version": "1.0.0"
   },
   "architecture": {
@@ -26,11 +26,11 @@
     ]
   },
   "contracts": {
-    "FactoryContract": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-    "DataStorage": "0xa16E02E87b7454126E5E10d957A927A7F5B5d2be",
-    "IssuanceOfDocument": "0xB7A5bd0345EF1Cc5E66bf61BdeC17D2461fBd968",
-    "StudentViolation": "0xeEBe00Ac0756308ac4AaBfD76c05c4F3088B8883",
-    "VotingContract": "0x10C6E9530F1C1AF873a391030a1D9E8ed0630D26"
+    "FactoryContract": "0xB7a24d65a87D5CE1Cb7fe11CaF4ddF25cFa13f6b",
+    "DataStorage": "0x5c797f0a6E192f74ae9EF98b60999819c7E11FC1",
+    "IssuanceOfDocument": "0xff70B7Af2Aba26118670Ba59e66DB0C3A6dc4d6C",
+    "StudentViolation": "0xd30efeE916b4517FBC5C87554751256e8d3359B2",
+    "VotingContract": "0xc8051808e7288425aD979905A9db3D2791b1890a"
   },
   "systemInfo": {
     "totalStudents": "0",
