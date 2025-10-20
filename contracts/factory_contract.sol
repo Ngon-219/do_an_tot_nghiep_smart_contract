@@ -3,13 +3,18 @@ pragma solidity ^0.8.0;
 
 import "./DataStorage.sol";
 import "./issuance_of_documents.sol";
+import "./DocumentNFT.sol";
 import "./student_score.sol";
 import "./voting_contract.sol";
 
+/**
+ * @title FactoryContract
+ * @dev Factory pattern để deploy và quản lý tất cả các contract trong hệ thống
+ */
 contract FactoryContract {
     DataStorage public dataStorage;
-
     IssuanceOfDocument public issuanceContract;
+    DocumentNFT public documentNFT;
 
     address[] public studentScoreContracts;
     mapping(address => bool) public isStudentScoreContract;
@@ -19,6 +24,7 @@ contract FactoryContract {
 
     event DataStorageDeployed(address indexed dataStorageAddress);
     event IssuanceContractDeployed(address indexed issuanceAddress);
+    event DocumentNFTDeployed(address indexed documentNFTAddress);
     event StudentScoreDeployed(address indexed scoreAddress);
     event VotingContractDeployed(address indexed votingAddress);
     event ContractAuthorized(address indexed contractAddress);
@@ -36,11 +42,23 @@ contract FactoryContract {
         emit IssuanceContractDeployed(address(issuanceContract));
         emit ContractAuthorized(address(issuanceContract));
         
+        documentNFT = new DocumentNFT(address(dataStorage), address(this));
+        dataStorage.authorizeContract(address(documentNFT));
+        emit DocumentNFTDeployed(address(documentNFT));
+        emit ContractAuthorized(address(documentNFT));
+        
+        documentNFT.transferOwnership(address(issuanceContract));
+        
+        issuanceContract.setDocumentNFT(address(documentNFT));
+        
         dataStorage.assignRole(msg.sender, DataStorage.Role.ADMIN);
     }
 
     modifier onlyDeployer() {
-        require(msg.sender == deployer, "Only deployer can call this");
+        require(
+            msg.sender == deployer || msg.sender == dataStorage.owner(),
+            "Only deployer or DataStorage owner can call this"
+        );
         _;
     }
 
@@ -87,6 +105,10 @@ contract FactoryContract {
         return address(issuanceContract);
     }
 
+    function getDocumentNFTAddress() external view returns (address) {
+        return address(documentNFT);
+    }
+
     function getAllStudentScoreContracts() external view returns (address[] memory) {
         return studentScoreContracts;
     }
@@ -118,6 +140,7 @@ contract FactoryContract {
     function getSystemInfo() external view returns (
         address dataStorageAddr,
         address issuanceAddr,
+        address documentNFTAddr,
         uint256 totalStudents,
         uint256 totalSigners,
         uint256 scoreContractCount,
@@ -126,6 +149,7 @@ contract FactoryContract {
         return (
             address(dataStorage),
             address(issuanceContract),
+            address(documentNFT),
             dataStorage.getTotalStudents(),
             dataStorage.getManagerCount(),
             studentScoreContracts.length,

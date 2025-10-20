@@ -185,7 +185,26 @@ contract StudentViolation {
         uint256 lastUpdated,
         address lastUpdatedBy
     ) {
-        require(dataStorage.isRegistered(msg.sender), "Only registered users can view violations");
+        // Check authorization: student can view their own, teacher/admin/manager can view all
+        uint256 callerStudentId = dataStorage.getStudentIdByAddress(msg.sender);
+        bool isAuthorized = false;
+        
+        if (callerStudentId == _studentId) {
+            // Student viewing their own violation
+            isAuthorized = true;
+        } else {
+            // Check if caller is teacher, admin, or manager
+            DataStorage.Role role = dataStorage.getUserRole(msg.sender);
+            if (role == DataStorage.Role.TEACHER || 
+                role == DataStorage.Role.ADMIN || 
+                role == DataStorage.Role.MANAGER ||
+                msg.sender == dataStorage.owner()) {
+                isAuthorized = true;
+            }
+        }
+        
+        require(isAuthorized, "Not authorized to view this student's violations");
+        
         ViolationDetail memory violation = violations[_studentId][_semester];
         
         return (
@@ -199,7 +218,24 @@ contract StudentViolation {
         uint256 _studentId,
         string memory _semester
     ) external view returns (uint256) {
-        require(dataStorage.isRegistered(msg.sender), "Only registered users can view violations");
+        // Same authorization logic as getViolation
+        uint256 callerStudentId = dataStorage.getStudentIdByAddress(msg.sender);
+        bool isAuthorized = false;
+        
+        if (callerStudentId == _studentId) {
+            isAuthorized = true;
+        } else {
+            DataStorage.Role role = dataStorage.getUserRole(msg.sender);
+            if (role == DataStorage.Role.TEACHER || 
+                role == DataStorage.Role.ADMIN || 
+                role == DataStorage.Role.MANAGER ||
+                msg.sender == dataStorage.owner()) {
+                isAuthorized = true;
+            }
+        }
+        
+        require(isAuthorized, "Not authorized to view this student's violations");
+        
         return violations[_studentId][_semester].points;
     }
 

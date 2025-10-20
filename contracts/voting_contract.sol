@@ -37,6 +37,12 @@ contract VotingContract {
         address indexed voter,
         string option
     );
+    event VoteChanged(
+        uint256 indexed eventId,
+        address indexed voter,
+        string oldOption,
+        string newOption
+    );
     event VotingEventClosed(uint256 indexed eventId, address indexed closedBy);
 
     constructor(address _dataStorage) {
@@ -147,6 +153,43 @@ contract VotingContract {
         ve.totalVotes++;
 
         emit VoteCast(_eventId, msg.sender, _option);
+    }
+
+    function changeVote(uint256 _eventId, string memory _newOption) external onlyActiveStudent {
+        VotingEvent storage ve = votingEvents[_eventId];
+        
+        require(ve.createdAt > 0, "Event not found");
+        require(ve.isActive, "Voting event is closed");
+        require(block.timestamp < ve.endTime, "Voting period has ended");
+        require(hasVoted[_eventId][msg.sender], "You haven't voted yet");
+        
+        // Validate new option exists
+        bool optionExists = false;
+        for (uint256 i = 0; i < ve.options.length; i++) {
+            if (keccak256(bytes(ve.options[i])) == keccak256(bytes(_newOption))) {
+                optionExists = true;
+                break;
+            }
+        }
+        require(optionExists, "Invalid option");
+        
+        // Get old vote
+        string memory oldOption = userVoteChoice[_eventId][msg.sender];
+        
+        // Prevent voting for same option
+        require(
+            keccak256(bytes(oldOption)) != keccak256(bytes(_newOption)),
+            "You already voted for this option"
+        );
+        
+        // Update vote counts
+        voteScores[_eventId][oldOption]--;
+        voteScores[_eventId][_newOption]++;
+        
+        // Update user's choice
+        userVoteChoice[_eventId][msg.sender] = _newOption;
+        
+        emit VoteChanged(_eventId, msg.sender, oldOption, _newOption);
     }
 
     function getVoteCount(uint256 _eventId, string memory _option) external view returns (uint256) {

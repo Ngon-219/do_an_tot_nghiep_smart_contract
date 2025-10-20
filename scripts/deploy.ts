@@ -19,7 +19,7 @@ async function main() {
 
     try {
         console.log("📦 [1/3] Deploying FactoryContract...");
-        console.log("   (This will automatically deploy DataStorage and IssuanceOfDocument)");
+        console.log("   (This will automatically deploy DataStorage, IssuanceOfDocument & DocumentNFT)");
         
         const FactoryContract = await ethers.getContractFactory("FactoryContract");
         const factoryContract = await FactoryContract.deploy();
@@ -31,12 +31,15 @@ async function main() {
 
         const dataStorageAddress = await factoryContract.getDataStorageAddress();
         const issuanceAddress = await factoryContract.getIssuanceContractAddress();
+        const documentNFTAddress = await factoryContract.getDocumentNFTAddress();
         
         deployedContracts["DataStorage"] = dataStorageAddress;
         deployedContracts["IssuanceOfDocument"] = issuanceAddress;
+        deployedContracts["DocumentNFT"] = documentNFTAddress;
         
         console.log("   ✅ DataStorage:", dataStorageAddress);
         console.log("   ✅ IssuanceOfDocument:", issuanceAddress);
+        console.log("   ✅ DocumentNFT (ERC-721):", documentNFTAddress);
         console.log();
 
         console.log("📊 [2/3] Deploying StudentViolation Contract...");
@@ -75,6 +78,7 @@ async function main() {
             "FactoryContract",
             "DataStorage",
             "IssuanceOfDocument",
+            "DocumentNFT",
             "StudentViolation",
             "VotingContract"
         ];
@@ -95,10 +99,11 @@ async function main() {
         console.log("-".repeat(70));
         console.log(`DataStorage Address       : ${systemInfo[0]}`);
         console.log(`IssuanceOfDocument Addr   : ${systemInfo[1]}`);
-        console.log(`Total Students            : ${systemInfo[2].toString()}`);
-        console.log(`Total Managers            : ${systemInfo[3].toString()}`);
-        console.log(`StudentViolation Instances: ${systemInfo[4].toString()}`);
-        console.log(`VotingContract Instances  : ${systemInfo[5].toString()}`);
+        console.log(`DocumentNFT Address       : ${systemInfo[2]}`);
+        console.log(`Total Students            : ${systemInfo[3].toString()}`);
+        console.log(`Total Managers            : ${systemInfo[4].toString()}`);
+        console.log(`StudentViolation Instances: ${systemInfo[5].toString()}`);
+        console.log(`VotingContract Instances  : ${systemInfo[6].toString()}`);
         console.log("-".repeat(70));
         console.log();
 
@@ -123,12 +128,13 @@ async function main() {
                 version: "1.0.0"
             },
             architecture: {
-                description: "Centralized DataStorage pattern with Factory deployment",
+                description: "Centralized DataStorage pattern with Factory deployment + NFT Documents",
                 components: {
                     core: "DataStorage - Single source of truth for all data",
                     factory: "FactoryContract - Manages deployment and authorization",
+                    nft: "DocumentNFT - ERC-721 NFT for education documents",
                     logic: [
-                        "IssuanceOfDocument - Manager signs documents",
+                        "IssuanceOfDocument - Manager signs documents & mints NFTs",
                         "StudentViolation - Track violation points",
                         "VotingContract - Student voting system"
                     ]
@@ -137,10 +143,10 @@ async function main() {
             },
             contracts: deployedContracts,
             systemInfo: {
-                totalStudents: systemInfo[2].toString(),
-                totalManagers: systemInfo[3].toString(),
-                studentViolationInstances: systemInfo[4].toString(),
-                votingContractInstances: systemInfo[5].toString()
+                totalStudents: systemInfo[3].toString(),
+                totalManagers: systemInfo[4].toString(),
+                studentViolationInstances: systemInfo[5].toString(),
+                votingContractInstances: systemInfo[6].toString()
             },
             quickStart: {
                 "1_add_manager": {
@@ -165,8 +171,8 @@ async function main() {
                 },
                 "5_sign_documents": {
                     contract: "IssuanceOfDocument",
-                    function: "signDocument(hash, studentId, type)",
-                    description: "Manager signs documents for students"
+                    function: "signDocument(hash, studentId, type, tokenURI)",
+                    description: "Manager signs documents and mints NFT to student wallet"
                 },
                 "6_create_voting": {
                     contract: "VotingContract",
@@ -199,10 +205,15 @@ async function main() {
         console.log("    → StudentViolation.initializeViolation(studentId, semester, initialPoints)");
         console.log();
         console.log("5️⃣  Start Operations:");
-        console.log("    → Manager signs documents");
+        console.log("    → Manager signs documents (mints NFT to student wallet)");
         console.log("    → Teacher manages violation points");
         console.log("    → Teacher/Manager creates voting events");
         console.log("    → Students vote");
+        console.log();
+        console.log("💎 NFT Documents:");
+        console.log("    → Each document is minted as ERC-721 NFT");
+        console.log("    → Students own their education documents as NFTs");
+        console.log("    → View NFTs on OpenSea or other NFT marketplaces");
         console.log("-".repeat(70));
         console.log();
 
