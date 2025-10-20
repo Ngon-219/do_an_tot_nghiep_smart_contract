@@ -1,51 +1,135 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.0;
 
+import "./DataStorage.sol";
 import "./issuance_of_documents.sol";
-import "./indentity.sol";
 import "./student_score.sol";
 import "./voting_contract.sol";
 
 contract FactoryContract {
-    IssuanceOfDocument public issuance_document;
-    IdentityContract public identity;
+    DataStorage public dataStorage;
 
-    constructor () {
-        issuance_document = new IssuanceOfDocument();
-        identity = new IdentityContract(address(this));
+    IssuanceOfDocument public issuanceContract;
+
+    address[] public studentScoreContracts;
+    mapping(address => bool) public isStudentScoreContract;
+    
+    address[] public votingContracts;
+    mapping(address => bool) public isVotingContract;
+
+    event DataStorageDeployed(address indexed dataStorageAddress);
+    event IssuanceContractDeployed(address indexed issuanceAddress);
+    event StudentScoreDeployed(address indexed scoreAddress);
+    event VotingContractDeployed(address indexed votingAddress);
+    event ContractAuthorized(address indexed contractAddress);
+
+    address public deployer;
+
+    constructor() {
+        deployer = msg.sender;
+        
+        dataStorage = new DataStorage();
+        emit DataStorageDeployed(address(dataStorage));
+        
+        issuanceContract = new IssuanceOfDocument(address(dataStorage));
+        dataStorage.authorizeContract(address(issuanceContract));
+        emit IssuanceContractDeployed(address(issuanceContract));
+        emit ContractAuthorized(address(issuanceContract));
+        
+        dataStorage.assignRole(msg.sender, DataStorage.Role.ADMIN);
     }
 
-    function get_issuance_contract_address() external view returns (address) {
-        return address(issuance_document);
+    modifier onlyDeployer() {
+        require(msg.sender == deployer, "Only deployer can call this");
+        _;
     }
 
-    function get_identity_contract_address() external view returns (address) {
-        return address(identity);
+    function authorizeContract(address _contract) external onlyDeployer {
+        dataStorage.authorizeContract(_contract);
+        emit ContractAuthorized(_contract);
     }
 
-    function addSigner(address _signer) external {
-        issuance_document.addSigner(_signer);
+    function deployStudentScore() external onlyDeployer returns (address) {
+        StudentViolation studentScore = new StudentViolation(address(dataStorage));
+        address scoreAddress = address(studentScore);
+        
+        dataStorage.authorizeContract(scoreAddress);
+        
+        studentScoreContracts.push(scoreAddress);
+        isStudentScoreContract[scoreAddress] = true;
+        
+        emit StudentScoreDeployed(scoreAddress);
+        emit ContractAuthorized(scoreAddress);
+        
+        return scoreAddress;
     }
 
-    function registerUsers(address[] memory _users, address _signer) external {
-        identity.register(_users, _signer);
+    function deployVotingContract() external onlyDeployer returns (address) {
+        VotingContract votingContract = new VotingContract(address(dataStorage));
+        address votingAddress = address(votingContract);
+        
+        dataStorage.authorizeContract(votingAddress);
+        
+        votingContracts.push(votingAddress);
+        isVotingContract[votingAddress] = true;
+        
+        emit VotingContractDeployed(votingAddress);
+        emit ContractAuthorized(votingAddress);
+        
+        return votingAddress;
     }
 
-    function getUserId(address user) external view returns (uint256) {
-        return identity.getUserId(user);
+    function getDataStorageAddress() external view returns (address) {
+        return address(dataStorage);
     }
 
-    function isSigner(address _signer) external view returns (bool) {
-        return issuance_document.isSigner(_signer);
+    function getIssuanceContractAddress() external view returns (address) {
+        return address(issuanceContract);
     }
 
-    function deployStudentScore() external returns (address) {
-        StudentScore studentScore = new StudentScore(address(this));
-        return address(studentScore);
+    function getAllStudentScoreContracts() external view returns (address[] memory) {
+        return studentScoreContracts;
     }
 
-    function deployVotingContract() external returns (address) {
-        VotingContract votingContract = new VotingContract(address(this));
-        return address(votingContract);
+    function getAllVotingContracts() external view returns (address[] memory) {
+        return votingContracts;
+    }
+
+    function getStudentScoreContractCount() external view returns (uint256) {
+        return studentScoreContracts.length;
+    }
+
+    function getVotingContractCount() external view returns (uint256) {
+        return votingContracts.length;
+    }
+
+    function isManager(address _manager) external view returns (bool) {
+        return dataStorage.isManager(_manager);
+    }
+
+    function getStudentId(address _address) external view returns (uint256) {
+        return dataStorage.getStudentIdByAddress(_address);
+    }
+
+    function isActiveStudent(address _address) external view returns (bool) {
+        return dataStorage.isActiveStudent(_address);
+    }
+
+    function getSystemInfo() external view returns (
+        address dataStorageAddr,
+        address issuanceAddr,
+        uint256 totalStudents,
+        uint256 totalSigners,
+        uint256 scoreContractCount,
+        uint256 votingContractCount
+    ) {
+        return (
+            address(dataStorage),
+            address(issuanceContract),
+            dataStorage.getTotalStudents(),
+            dataStorage.getManagerCount(),
+            studentScoreContracts.length,
+            votingContracts.length
+        );
     }
 }

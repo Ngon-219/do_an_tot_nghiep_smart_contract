@@ -1,52 +1,220 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.4.16 <0.9.0;
-import "./factory_contract.sol";
+
+import "./DataStorage.sol";
 
 contract VotingContract {
-    FactoryContract factory;
+    DataStorage public dataStorage;
     uint256 public eventCount;
-    mapping(uint256 => VotingEvent) public votingEvents;
 
     struct VotingEvent {
-        string event_name;
-        uint256 created_at;
-        address created_by;
+        string eventName;
+        string description;
+        uint256 createdAt;
+        uint256 endTime;
+        address createdBy;
         string[] options;
-        mapping(string => uint256) scores;
-        mapping(address => mapping(string => bool)) hasVoted;
+        bool isActive;
+        uint256 totalVotes;
     }
 
-    constructor(address _factory) {
-        factory = FactoryContract(_factory);
+    mapping(uint256 => VotingEvent) public votingEvents;
+    
+    mapping(uint256 => mapping(string => uint256)) public voteScores;
+    
+    mapping(uint256 => mapping(address => bool)) public hasVoted;
+    
+    mapping(uint256 => mapping(address => string)) public userVoteChoice;
+
+    event VotingEventCreated(
+        uint256 indexed eventId,
+        string eventName,
+        address indexed creator,
+        uint256 endTime
+    );
+    event VoteCast(
+        uint256 indexed eventId,
+        address indexed voter,
+        string option
+    );
+    event VotingEventClosed(uint256 indexed eventId, address indexed closedBy);
+
+    constructor(address _dataStorage) {
+        require(_dataStorage != address(0), "Invalid DataStorage address");
+        dataStorage = DataStorage(_dataStorage);
     }
 
-    function createVotingEvent(string memory _name, string[] memory _options, address _signer) public {
-        require(factory.isSigner(_signer), "Signer is not valid");
-        require(_options.length > 1, "At least 2 options provide");
+    modifier onlyAdmin() {
+        DataStorage.Role role = dataStorage.getUserRole(msg.sender);
+        require(
+            role == DataStorage.Role.ADMIN || msg.sender == dataStorage.owner(),
+            "Only admin can call this"
+        );
+        _;
+    }
+
+    modifier onlyManagerOrTeacher() {
+        DataStorage.Role role = dataStorage.getUserRole(msg.sender);
+        require(
+            role == DataStorage.Role.MANAGER || 
+            role == DataStorage.Role.TEACHER ||
+            role == DataStorage.Role.ADMIN ||
+            msg.sender == dataStorage.owner(),
+            "Only manager, teacher, or admin can call this"
+        );
+        _;
+    }
+
+    modifier onlyActiveStudent() {
+        require(
+            dataStorage.isActiveStudent(msg.sender),
+            "Only active students can vote"
+        );
+        _;
+    }
+
+    function createVotingEvent(
+        string memory _name,
+        string memory _description,
+        string[] memory _options,
+        uint256 _durationInDays
+    ) external onlyManagerOrTeacher returns (uint256) {
+        require(bytes(_name).length > 0, "Event name required");
+        require(_options.length >= 2, "At least 2 options required");
+        require(_durationInDays > 0 && _durationInDays <= 365, "Invalid duration");
 
         uint256 eventId = eventCount++;
-        VotingEvent storage ve = votingEvents[eventId];
-        ve.event_name = _name;
-        ve.created_at = block.timestamp;
-        ve.created_by = msg.sender;
+        uint256 endTime = block.timestamp + (_durationInDays * 1 days);
 
-        for (uint i = 0; i < _options.length; i++) {
-            ve.options.push(_options[i]);
-            ve.scores[_options[i]] = 0;
+        votingEvents[eventId] = VotingEvent({
+            eventName: _name,
+            description: _description,
+            createdAt: block.timestamp,
+            endTime: endTime,
+            createdBy: msg.sender,
+            options: _options,
+            isActive: true,
+            totalVotes: 0
+        });
+
+        for (uint256 i = 0; i < _options.length; i++) {
+            voteScores[eventId][_options[i]] = 0;
         }
+
+        emit VotingEventCreated(eventId, _name, msg.sender, endTime);
+        return eventId;
     }
 
-    function vote(uint256 eventId, string memory option) public {
-        require(factory.getUserId(msg.sender) > 0, "Only registered users can vote");
+    function closeVotingEvent(uint256 _eventId) external {
+        VotingEvent storage ve = votingEvents[_eventId];
+        require(ve.createdAt > 0, "Event not found");
+        require(ve.isActive, "Event already closed");
         
-        VotingEvent storage ve = votingEvents[eventId];
-        require(!ve.hasVoted[msg.sender][option], "You have already voted for this option");
-        
-        ve.scores[option]++;
-        ve.hasVoted[msg.sender][option] = true;
+        DataStorage.Role role = dataStorage.getUserRole(msg.sender);
+        require(
+            msg.sender == ve.createdBy || 
+            role == DataStorage.Role.MANAGER ||
+            role == DataStorage.Role.TEACHER ||
+            role == DataStorage.Role.ADMIN ||
+            msg.sender == dataStorage.owner(),
+            "Only creator, manager, teacher, or admin can close event"
+        );
+
+        ve.isActive = false;
+        emit VotingEventClosed(_eventId, msg.sender);
     }
 
-    function getVoteCount(uint256 eventId, string memory option) public view returns (uint256) {
-        return votingEvents[eventId].scores[option];
+    function vote(uint256 _eventId, string memory _option) external onlyActiveStudent {
+        VotingEvent storage ve = votingEvents[_eventId];
+        
+        require(ve.createdAt > 0, "Event not found");
+        require(ve.isActive, "Voting event is closed");
+        require(block.timestamp < ve.endTime, "Voting period has ended");
+        require(!hasVoted[_eventId][msg.sender], "You have already voted in this event");
+        
+        bool optionExists = false;
+        for (uint256 i = 0; i < ve.options.length; i++) {
+            if (keccak256(bytes(ve.options[i])) == keccak256(bytes(_option))) {
+                optionExists = true;
+                break;
+            }
+        }
+        require(optionExists, "Invalid option");
+
+        hasVoted[_eventId][msg.sender] = true;
+        userVoteChoice[_eventId][msg.sender] = _option;
+        voteScores[_eventId][_option]++;
+        ve.totalVotes++;
+
+        emit VoteCast(_eventId, msg.sender, _option);
+    }
+
+    function getVoteCount(uint256 _eventId, string memory _option) external view returns (uint256) {
+        return voteScores[_eventId][_option];
+    }
+
+    function getEventOptions(uint256 _eventId) external view returns (string[] memory) {
+        return votingEvents[_eventId].options;
+    }
+
+    function getEventInfo(uint256 _eventId) external view returns (
+        string memory eventName,
+        string memory description,
+        uint256 createdAt,
+        uint256 endTime,
+        address createdBy,
+        bool isActive,
+        uint256 totalVotes
+    ) {
+        VotingEvent storage ve = votingEvents[_eventId];
+        require(ve.createdAt > 0, "Event not found");
+        
+        return (
+            ve.eventName,
+            ve.description,
+            ve.createdAt,
+            ve.endTime,
+            ve.createdBy,
+            ve.isActive,
+            ve.totalVotes
+        );
+    }
+
+    function hasUserVoted(uint256 _eventId, address _user) external view returns (bool) {
+        return hasVoted[_eventId][_user];
+    }
+
+    function getUserVote(uint256 _eventId, address _user) external view returns (string memory) {
+        require(hasVoted[_eventId][_user], "User has not voted");
+        return userVoteChoice[_eventId][_user];
+    }
+
+    function getVotingResults(uint256 _eventId) external view returns (
+        string[] memory options,
+        uint256[] memory votes
+    ) {
+        VotingEvent storage ve = votingEvents[_eventId];
+        require(ve.createdAt > 0, "Event not found");
+        
+        uint256 optionCount = ve.options.length;
+        string[] memory eventOptions = new string[](optionCount);
+        uint256[] memory voteCounts = new uint256[](optionCount);
+        
+        for (uint256 i = 0; i < optionCount; i++) {
+            eventOptions[i] = ve.options[i];
+            voteCounts[i] = voteScores[_eventId][ve.options[i]];
+        }
+        
+        return (eventOptions, voteCounts);
+    }
+
+    function getTotalEvents() external view returns (uint256) {
+        return eventCount;
+    }
+
+    function updateDataStorage(address _newDataStorage) external {
+        require(msg.sender == dataStorage.owner(), "Only DataStorage owner");
+        require(_newDataStorage != address(0), "Invalid address");
+        dataStorage = DataStorage(_newDataStorage);
     }
 }
