@@ -4,6 +4,22 @@ pragma solidity >=0.4.16 <0.9.0;
 import "./DataStorage.sol";
 
 contract VotingContract {
+    // Custom errors for gas optimization
+    error InvalidDataStorage();
+    error Unauthorized();
+    error EventNameRequired();
+    error MinimumTwoOptions();
+    error InvalidDuration();
+    error EventNotFound();
+    error EventAlreadyClosed();
+    error EventClosed();
+    error VotingPeriodEnded();
+    error AlreadyVoted();
+    error NotVoted();
+    error InvalidOption();
+    error SameOption();
+    error UserHasNotVoted();
+    
     DataStorage public dataStorage;
     uint256 public eventCount;
 
@@ -46,48 +62,45 @@ contract VotingContract {
     event VotingEventClosed(uint256 indexed eventId, address indexed closedBy);
 
     constructor(address _dataStorage) {
-        require(_dataStorage != address(0), "Invalid DataStorage address");
+        if (_dataStorage == address(0)) revert InvalidDataStorage();
         dataStorage = DataStorage(_dataStorage);
     }
 
     modifier onlyAdmin() {
         DataStorage.Role role = dataStorage.getUserRole(msg.sender);
-        require(
-            role == DataStorage.Role.ADMIN || msg.sender == dataStorage.owner(),
-            "Only admin can call this"
-        );
+        if (role != DataStorage.Role.ADMIN && msg.sender != dataStorage.owner()) {
+            revert Unauthorized();
+        }
         _;
     }
 
     modifier onlyManagerOrTeacher() {
         DataStorage.Role role = dataStorage.getUserRole(msg.sender);
-        require(
-            role == DataStorage.Role.MANAGER || 
-            role == DataStorage.Role.TEACHER ||
-            role == DataStorage.Role.ADMIN ||
-            msg.sender == dataStorage.owner(),
-            "Only manager, teacher, or admin can call this"
-        );
+        if (role != DataStorage.Role.MANAGER && 
+            role != DataStorage.Role.TEACHER &&
+            role != DataStorage.Role.ADMIN &&
+            msg.sender != dataStorage.owner()) {
+            revert Unauthorized();
+        }
         _;
     }
 
     modifier onlyActiveStudent() {
-        require(
-            dataStorage.isActiveStudent(msg.sender),
-            "Only active students can vote"
-        );
+        if (!dataStorage.isActiveStudent(msg.sender)) {
+            revert Unauthorized();
+        }
         _;
     }
 
     function createVotingEvent(
-        string memory _name,
-        string memory _description,
-        string[] memory _options,
+        string calldata _name,
+        string calldata _description,
+        string[] calldata _options,
         uint256 _durationInDays
     ) external onlyManagerOrTeacher returns (uint256) {
-        require(bytes(_name).length > 0, "Event name required");
-        require(_options.length >= 2, "At least 2 options required");
-        require(_durationInDays > 0 && _durationInDays <= 365, "Invalid duration");
+        if (bytes(_name).length == 0) revert EventNameRequired();
+        if (_options.length < 2) revert MinimumTwoOptions();
+        if (_durationInDays == 0 || _durationInDays > 365) revert InvalidDuration();
 
         uint256 eventId = eventCount++;
         uint256 endTime = block.timestamp + (_durationInDays * 1 days);
@@ -103,8 +116,10 @@ contract VotingContract {
             totalVotes: 0
         });
 
-        for (uint256 i = 0; i < _options.length; i++) {
+        uint256 length = _options.length;
+        for (uint256 i = 0; i < length; ) {
             voteScores[eventId][_options[i]] = 0;
+            unchecked { ++i; }
         }
 
         emit VotingEventCreated(eventId, _name, msg.sender, endTime);
@@ -113,39 +128,40 @@ contract VotingContract {
 
     function closeVotingEvent(uint256 _eventId) external {
         VotingEvent storage ve = votingEvents[_eventId];
-        require(ve.createdAt > 0, "Event not found");
-        require(ve.isActive, "Event already closed");
+        if (ve.createdAt == 0) revert EventNotFound();
+        if (!ve.isActive) revert EventAlreadyClosed();
         
         DataStorage.Role role = dataStorage.getUserRole(msg.sender);
-        require(
-            msg.sender == ve.createdBy || 
-            role == DataStorage.Role.MANAGER ||
-            role == DataStorage.Role.TEACHER ||
-            role == DataStorage.Role.ADMIN ||
-            msg.sender == dataStorage.owner(),
-            "Only creator, manager, teacher, or admin can close event"
-        );
+        if (msg.sender != ve.createdBy && 
+            role != DataStorage.Role.MANAGER &&
+            role != DataStorage.Role.TEACHER &&
+            role != DataStorage.Role.ADMIN &&
+            msg.sender != dataStorage.owner()) {
+            revert Unauthorized();
+        }
 
         ve.isActive = false;
         emit VotingEventClosed(_eventId, msg.sender);
     }
 
-    function vote(uint256 _eventId, string memory _option) external onlyActiveStudent {
+    function vote(uint256 _eventId, string calldata _option) external onlyActiveStudent {
         VotingEvent storage ve = votingEvents[_eventId];
         
-        require(ve.createdAt > 0, "Event not found");
-        require(ve.isActive, "Voting event is closed");
-        require(block.timestamp < ve.endTime, "Voting period has ended");
-        require(!hasVoted[_eventId][msg.sender], "You have already voted in this event");
+        if (ve.createdAt == 0) revert EventNotFound();
+        if (!ve.isActive) revert EventClosed();
+        if (block.timestamp >= ve.endTime) revert VotingPeriodEnded();
+        if (hasVoted[_eventId][msg.sender]) revert AlreadyVoted();
         
         bool optionExists = false;
-        for (uint256 i = 0; i < ve.options.length; i++) {
+        uint256 length = ve.options.length;
+        for (uint256 i = 0; i < length; ) {
             if (keccak256(bytes(ve.options[i])) == keccak256(bytes(_option))) {
                 optionExists = true;
                 break;
             }
+            unchecked { ++i; }
         }
-        require(optionExists, "Invalid option");
+        if (!optionExists) revert InvalidOption();
 
         hasVoted[_eventId][msg.sender] = true;
         userVoteChoice[_eventId][msg.sender] = _option;
@@ -155,32 +171,33 @@ contract VotingContract {
         emit VoteCast(_eventId, msg.sender, _option);
     }
 
-    function changeVote(uint256 _eventId, string memory _newOption) external onlyActiveStudent {
+    function changeVote(uint256 _eventId, string calldata _newOption) external onlyActiveStudent {
         VotingEvent storage ve = votingEvents[_eventId];
         
-        require(ve.createdAt > 0, "Event not found");
-        require(ve.isActive, "Voting event is closed");
-        require(block.timestamp < ve.endTime, "Voting period has ended");
-        require(hasVoted[_eventId][msg.sender], "You haven't voted yet");
+        if (ve.createdAt == 0) revert EventNotFound();
+        if (!ve.isActive) revert EventClosed();
+        if (block.timestamp >= ve.endTime) revert VotingPeriodEnded();
+        if (!hasVoted[_eventId][msg.sender]) revert NotVoted();
         
         // Validate new option exists
         bool optionExists = false;
-        for (uint256 i = 0; i < ve.options.length; i++) {
+        uint256 length = ve.options.length;
+        for (uint256 i = 0; i < length; ) {
             if (keccak256(bytes(ve.options[i])) == keccak256(bytes(_newOption))) {
                 optionExists = true;
                 break;
             }
+            unchecked { ++i; }
         }
-        require(optionExists, "Invalid option");
+        if (!optionExists) revert InvalidOption();
         
         // Get old vote
         string memory oldOption = userVoteChoice[_eventId][msg.sender];
         
         // Prevent voting for same option
-        require(
-            keccak256(bytes(oldOption)) != keccak256(bytes(_newOption)),
-            "You already voted for this option"
-        );
+        if (keccak256(bytes(oldOption)) == keccak256(bytes(_newOption))) {
+            revert SameOption();
+        }
         
         // Update vote counts
         voteScores[_eventId][oldOption]--;
@@ -192,7 +209,7 @@ contract VotingContract {
         emit VoteChanged(_eventId, msg.sender, oldOption, _newOption);
     }
 
-    function getVoteCount(uint256 _eventId, string memory _option) external view returns (uint256) {
+    function getVoteCount(uint256 _eventId, string calldata _option) external view returns (uint256) {
         return voteScores[_eventId][_option];
     }
 
@@ -228,7 +245,7 @@ contract VotingContract {
     }
 
     function getUserVote(uint256 _eventId, address _user) external view returns (string memory) {
-        require(hasVoted[_eventId][_user], "User has not voted");
+        if (!hasVoted[_eventId][_user]) revert UserHasNotVoted();
         return userVoteChoice[_eventId][_user];
     }
 
@@ -237,15 +254,16 @@ contract VotingContract {
         uint256[] memory votes
     ) {
         VotingEvent storage ve = votingEvents[_eventId];
-        require(ve.createdAt > 0, "Event not found");
+        if (ve.createdAt == 0) revert EventNotFound();
         
         uint256 optionCount = ve.options.length;
         string[] memory eventOptions = new string[](optionCount);
         uint256[] memory voteCounts = new uint256[](optionCount);
         
-        for (uint256 i = 0; i < optionCount; i++) {
+        for (uint256 i = 0; i < optionCount; ) {
             eventOptions[i] = ve.options[i];
             voteCounts[i] = voteScores[_eventId][ve.options[i]];
+            unchecked { ++i; }
         }
         
         return (eventOptions, voteCounts);
@@ -256,8 +274,8 @@ contract VotingContract {
     }
 
     function updateDataStorage(address _newDataStorage) external {
-        require(msg.sender == dataStorage.owner(), "Only DataStorage owner");
-        require(_newDataStorage != address(0), "Invalid address");
+        if (msg.sender != dataStorage.owner()) revert Unauthorized();
+        if (_newDataStorage == address(0)) revert InvalidDataStorage();
         dataStorage = DataStorage(_newDataStorage);
     }
 }

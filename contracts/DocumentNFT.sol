@@ -6,6 +6,16 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./DataStorage.sol";
 
 contract DocumentNFT is ERC721URIStorage, Ownable {
+    // Custom errors for gas optimization
+    error InvalidDataStorage();
+    error InvalidStudentAddress();
+    error DocumentHashRequired();
+    error DocumentAlreadyMinted();
+    error TokenDoesNotExist();
+    error DocumentAlreadyRevoked();
+    error DocumentAlreadyValid();
+    error InvalidAddress();
+    
     DataStorage public dataStorage;
     
     uint256 private _nextTokenId = 1;
@@ -47,22 +57,22 @@ contract DocumentNFT is ERC721URIStorage, Ownable {
         address _dataStorage,
         address initialOwner
     ) ERC721("Education Document NFT", "EDUDOC") Ownable(initialOwner) {
-        require(_dataStorage != address(0), "Invalid DataStorage address");
+        if (_dataStorage == address(0)) revert InvalidDataStorage();
         dataStorage = DataStorage(_dataStorage);
     }
     
     function mintDocument(
         uint256 _studentId,
         address _studentAddress,
-        string memory _documentType,
-        string memory _documentHash,
-        string memory _tokenURI
+        string calldata _documentType,
+        string calldata _documentHash,
+        string calldata _tokenURI
     ) external onlyOwner returns (uint256) {
-        require(_studentAddress != address(0), "Invalid student address");
-        require(bytes(_documentHash).length > 0, "Document hash required");
+        if (_studentAddress == address(0)) revert InvalidStudentAddress();
+        if (bytes(_documentHash).length == 0) revert DocumentHashRequired();
         
         bytes32 hashKey = keccak256(abi.encodePacked(_documentHash, _studentId));
-        require(hashToTokenId[hashKey] == 0, "Document already minted");
+        if (hashToTokenId[hashKey] != 0) revert DocumentAlreadyMinted();
         
         uint256 tokenId = _nextTokenId++;
         
@@ -90,8 +100,8 @@ contract DocumentNFT is ERC721URIStorage, Ownable {
     }
     
     function revokeDocument(uint256 _tokenId) external onlyOwner {
-        require(_ownerOf(_tokenId) != address(0), "Token does not exist");
-        require(documentMetadata[_tokenId].isValid, "Document already revoked");
+        if (_ownerOf(_tokenId) == address(0)) revert TokenDoesNotExist();
+        if (!documentMetadata[_tokenId].isValid) revert DocumentAlreadyRevoked();
         
         documentMetadata[_tokenId].isValid = false;
         
@@ -99,8 +109,8 @@ contract DocumentNFT is ERC721URIStorage, Ownable {
     }
     
     function reactivateDocument(uint256 _tokenId) external onlyOwner {
-        require(_ownerOf(_tokenId) != address(0), "Token does not exist");
-        require(!documentMetadata[_tokenId].isValid, "Document is already valid");
+        if (_ownerOf(_tokenId) == address(0)) revert TokenDoesNotExist();
+        if (documentMetadata[_tokenId].isValid) revert DocumentAlreadyValid();
         
         documentMetadata[_tokenId].isValid = true;
         
@@ -115,7 +125,7 @@ contract DocumentNFT is ERC721URIStorage, Ownable {
         address issuedBy,
         bool isValid
     ) {
-        require(_ownerOf(_tokenId) != address(0), "Token does not exist");
+        if (_ownerOf(_tokenId) == address(0)) revert TokenDoesNotExist();
         DocumentMetadata memory metadata = documentMetadata[_tokenId];
         
         return (
@@ -137,7 +147,7 @@ contract DocumentNFT is ERC721URIStorage, Ownable {
         return documentMetadata[_tokenId].isValid;
     }
     
-    function getTokenIdByHash(string memory _documentHash, uint256 _studentId) external view returns (uint256) {
+    function getTokenIdByHash(string calldata _documentHash, uint256 _studentId) external view returns (uint256) {
         bytes32 hashKey = keccak256(abi.encodePacked(_documentHash, _studentId));
         return hashToTokenId[hashKey];
     }
@@ -155,7 +165,7 @@ contract DocumentNFT is ERC721URIStorage, Ownable {
     }
     
     function updateDataStorage(address _newDataStorage) external onlyOwner {
-        require(_newDataStorage != address(0), "Invalid address");
+        if (_newDataStorage == address(0)) revert InvalidAddress();
         dataStorage = DataStorage(_newDataStorage);
     }
 }

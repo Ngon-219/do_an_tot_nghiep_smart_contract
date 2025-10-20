@@ -2,6 +2,21 @@
 pragma solidity ^0.8.0;
 
 contract DataStorage {
+    // Custom errors for gas optimization
+    error Unauthorized();
+    error InvalidAddress();
+    error ManagerAlreadyExists();
+    error ManagerNotFound();
+    error NoManagersToRemove();
+    error AddressAlreadyRegistered();
+    error StudentCodeAlreadyExists();
+    error StudentCodeRequired();
+    error ArrayLengthMismatch();
+    error MaxBatchSizeExceeded();
+    error StudentNotFound();
+    error StudentAlreadyInactive();
+    error InvalidRole();
+    
     address public owner;
     
     enum Role {
@@ -47,12 +62,12 @@ contract DataStorage {
     event ContractUnauthorized(address indexed contractAddress);
     
     modifier onlyOwner() {
-        require(msg.sender == owner, "Only owner can call this");
+        if (msg.sender != owner) revert Unauthorized();
         _;
     }
     
     modifier onlyAdmin() {
-        require(userRoles[msg.sender] == Role.ADMIN || msg.sender == owner, "Only admin can call this");
+        if (userRoles[msg.sender] != Role.ADMIN && msg.sender != owner) revert Unauthorized();
         _;
     }
     
@@ -71,7 +86,7 @@ contract DataStorage {
     }
     
     function changeOwner(address _newOwner) external onlyOwner {
-        require(_newOwner != address(0), "Invalid address");
+        if (_newOwner == address(0)) revert InvalidAddress();
         address oldOwner = owner;
         owner = _newOwner;
         userRoles[_newOwner] = Role.ADMIN;
@@ -80,7 +95,7 @@ contract DataStorage {
     }
     
     function authorizeContract(address _contract) external onlyOwner {
-        require(_contract != address(0), "Invalid address");
+        if (_contract == address(0)) revert InvalidAddress();
         authorizedContracts[_contract] = true;
         emit ContractAuthorized(_contract);
     }
@@ -91,8 +106,8 @@ contract DataStorage {
     }
     
     function addManager(address _manager) external onlyAdmin {
-        require(_manager != address(0), "Invalid address");
-        require(!isManager[_manager], "Manager already exists");
+        if (_manager == address(0)) revert InvalidAddress();
+        if (isManager[_manager]) revert ManagerAlreadyExists();
         
         managerIndex[_manager] = managers.length;
         managers.push(_manager);
@@ -104,8 +119,8 @@ contract DataStorage {
     }
     
     function removeManager(address _manager) external onlyAdmin {
-        require(isManager[_manager], "Manager not found");
-        require(managers.length > 0, "No managers to remove");
+        if (!isManager[_manager]) revert ManagerNotFound();
+        if (managers.length == 0) revert NoManagersToRemove();
         
         uint256 idx = managerIndex[_manager];
         address lastManager = managers[managers.length - 1];
@@ -131,14 +146,14 @@ contract DataStorage {
 
     function registerStudent(
         address _studentAddress,
-        string memory _studentCode,
-        string memory _fullName,
-        string memory _email
+        string calldata _studentCode,
+        string calldata _fullName,
+        string calldata _email
     ) external onlyAdmin returns (uint256) {
-        require(_studentAddress != address(0), "Invalid address");
-        require(addressToStudentId[_studentAddress] == 0, "Address already registered");
-        require(codeToStudentId[_studentCode] == 0, "Student code already exists");
-        require(bytes(_studentCode).length > 0, "Student code required");
+        if (_studentAddress == address(0)) revert InvalidAddress();
+        if (addressToStudentId[_studentAddress] != 0) revert AddressAlreadyRegistered();
+        if (codeToStudentId[_studentCode] != 0) revert StudentCodeAlreadyExists();
+        if (bytes(_studentCode).length == 0) revert StudentCodeRequired();
         
         uint256 studentId = nextStudentId++;
         
@@ -164,51 +179,64 @@ contract DataStorage {
     }
     
     function registerStudentsBatch(
-        address[] memory _addresses,
-        string[] memory _studentCodes,
-        string[] memory _fullNames,
-        string[] memory _emails
+        address[] calldata _addresses,
+        string[] calldata _studentCodes,
+        string[] calldata _fullNames,
+        string[] calldata _emails
     ) external onlyAdmin {
-        require(_addresses.length == _studentCodes.length, "Array length mismatch");
-        require(_addresses.length == _fullNames.length, "Array length mismatch");
-        require(_addresses.length == _emails.length, "Array length mismatch");
-        require(_addresses.length <= 50, "Maximum 50 students per batch");
+        uint256 length = _addresses.length;
+        if (length != _studentCodes.length || length != _fullNames.length || length != _emails.length) {
+            revert ArrayLengthMismatch();
+        }
+        if (length > 50) revert MaxBatchSizeExceeded();
         
-        for (uint256 i = 0; i < _addresses.length; i++) {
-            if (addressToStudentId[_addresses[i]] == 0 && codeToStudentId[_studentCodes[i]] == 0) {
-                uint256 studentId = nextStudentId++;
+        uint256 currentId = nextStudentId;
+        uint256 timestamp = block.timestamp;
+        uint256 successCount;
+        
+        for (uint256 i = 0; i < length; ) {
+            address addr = _addresses[i];
+            string calldata code = _studentCodes[i];
+            
+            if (addressToStudentId[addr] == 0 && codeToStudentId[code] == 0) {
+                uint256 studentId = currentId++;
                 
                 students[studentId] = Student({
                     id: studentId,
-                    walletAddress: _addresses[i],
-                    studentCode: _studentCodes[i],
+                    walletAddress: addr,
+                    studentCode: code,
                     fullName: _fullNames[i],
                     email: _emails[i],
                     isActive: true,
-                    registeredAt: block.timestamp
+                    registeredAt: timestamp
                 });
                 
-                addressToStudentId[_addresses[i]] = studentId;
-                codeToStudentId[_studentCodes[i]] = studentId;
-                userRoles[_addresses[i]] = Role.STUDENT;
-                isRegistered[_addresses[i]] = true;
-                totalStudents++;
+                addressToStudentId[addr] = studentId;
+                codeToStudentId[code] = studentId;
+                userRoles[addr] = Role.STUDENT;
+                isRegistered[addr] = true;
                 
-                emit StudentRegistered(studentId, _addresses[i], _studentCodes[i]);
+                emit StudentRegistered(studentId, addr, code);
+                unchecked { ++successCount; }
             }
+            
+            unchecked { ++i; }
         }
+        
+        nextStudentId = currentId;
+        totalStudents += successCount;
     }
     
     function deactivateStudent(uint256 _studentId) external onlyAdmin {
-        require(students[_studentId].id != 0, "Student not found");
-        require(students[_studentId].isActive, "Student already inactive");
+        if (students[_studentId].id == 0) revert StudentNotFound();
+        if (!students[_studentId].isActive) revert StudentAlreadyInactive();
         
         students[_studentId].isActive = false;
         emit StudentDeactivated(_studentId);
     }
 
     function activateStudent(uint256 _studentId) external onlyAdmin {
-        require(students[_studentId].id != 0, "Student not found");
+        if (students[_studentId].id == 0) revert StudentNotFound();
         students[_studentId].isActive = true;
     }
     
@@ -222,7 +250,7 @@ contract DataStorage {
         uint256 registeredAt
     ) {
         Student memory student = students[_studentId];
-        require(student.id != 0, "Student not found");
+        if (student.id == 0) revert StudentNotFound();
         
         return (
             student.id,
@@ -250,7 +278,7 @@ contract DataStorage {
     }
 
     function assignRole(address _user, Role _role) external onlyOwner {
-        require(_user != address(0), "Invalid address");
+        if (_user == address(0)) revert InvalidAddress();
         userRoles[_user] = _role;
         isRegistered[_user] = true;
         emit RoleAssigned(_user, _role);

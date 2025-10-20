@@ -10,6 +10,21 @@ import "./DocumentNFT.sol";
  * Manager ký document → Mint NFT → Gửi về ví sinh viên
  */
 contract IssuanceOfDocument {
+    // Custom errors for gas optimization
+    error InvalidDataStorage();
+    error Unauthorized();
+    error InvalidDocumentNFT();
+    error DocumentNFTNotSet();
+    error DocumentHashRequired();
+    error InvalidStudentId();
+    error StudentNotFound();
+    error StudentNotActive();
+    error StudentHasNoWallet();
+    error DocumentAlreadyExists();
+    error DocumentNotFound();
+    error DocumentAlreadyRevoked();
+    error DocumentAlreadyValid();
+    
     DataStorage public dataStorage;
     DocumentNFT public documentNFT;
 
@@ -41,21 +56,20 @@ contract IssuanceOfDocument {
     event DocumentNFTUpdated(address indexed oldNFT, address indexed newNFT);
 
     constructor(address _dataStorage) {
-        require(_dataStorage != address(0), "Invalid DataStorage address");
+        if (_dataStorage == address(0)) revert InvalidDataStorage();
         dataStorage = DataStorage(_dataStorage);
     }
 
     modifier onlyManager() {
-        require(dataStorage.isManager(msg.sender), "Only authorized managers can call this");
+        if (!dataStorage.isManager(msg.sender)) revert Unauthorized();
         _;
     }
 
     modifier onlyAdmin() {
         DataStorage.Role role = dataStorage.getUserRole(msg.sender);
-        require(
-            role == DataStorage.Role.ADMIN || msg.sender == dataStorage.owner(),
-            "Only admin can call this"
-        );
+        if (role != DataStorage.Role.ADMIN && msg.sender != dataStorage.owner()) {
+            revert Unauthorized();
+        }
         _;
     }
 
@@ -63,7 +77,7 @@ contract IssuanceOfDocument {
      * @dev Set DocumentNFT contract address (only admin, called once after deployment)
      */
     function setDocumentNFT(address _documentNFT) external onlyAdmin {
-        require(_documentNFT != address(0), "Invalid DocumentNFT address");
+        if (_documentNFT == address(0)) revert InvalidDocumentNFT();
         address oldNFT = address(documentNFT);
         documentNFT = DocumentNFT(_documentNFT);
         emit DocumentNFTUpdated(oldNFT, _documentNFT);
@@ -77,20 +91,20 @@ contract IssuanceOfDocument {
      * @param _tokenURI URI của metadata JSON (IPFS link hoặc API endpoint)
      */
     function signDocument(
-        string memory _documentHash,
+        string calldata _documentHash,
         uint256 _studentId,
-        string memory _documentType,
-        string memory _tokenURI
+        string calldata _documentType,
+        string calldata _tokenURI
     ) public onlyManager returns (bytes32, uint256) {
-        require(address(documentNFT) != address(0), "DocumentNFT not set");
-        require(bytes(_documentHash).length > 0, "Document hash required");
-        require(_studentId > 0, "Invalid student ID");
+        if (address(documentNFT) == address(0)) revert DocumentNFTNotSet();
+        if (bytes(_documentHash).length == 0) revert DocumentHashRequired();
+        if (_studentId == 0) revert InvalidStudentId();
         
         // Get student info from DataStorage
         (uint256 id, address studentAddress, , , , bool isActive, ) = dataStorage.getStudent(_studentId);
-        require(id != 0, "Student not found");
-        require(isActive, "Student is not active");
-        require(studentAddress != address(0), "Student has no wallet address");
+        if (id == 0) revert StudentNotFound();
+        if (!isActive) revert StudentNotActive();
+        if (studentAddress == address(0)) revert StudentHasNoWallet();
         
         // Generate document ID
         bytes32 docId = keccak256(abi.encodePacked(
@@ -100,7 +114,7 @@ contract IssuanceOfDocument {
             msg.sender
         ));
         
-        require(documents[docId].createdAt == 0, "Document already exists");
+        if (documents[docId].createdAt != 0) revert DocumentAlreadyExists();
         
         // Mint NFT to student address
         uint256 tokenId = documentNFT.mintDocument(
@@ -134,8 +148,8 @@ contract IssuanceOfDocument {
      * @dev Revoke document (revoke NFT validity, but NFT still exists in student wallet)
      */
     function revokeDocument(bytes32 _documentId) external onlyAdmin {
-        require(documents[_documentId].createdAt != 0, "Document does not exist");
-        require(documents[_documentId].isValid, "Document already revoked");
+        if (documents[_documentId].createdAt == 0) revert DocumentNotFound();
+        if (!documents[_documentId].isValid) revert DocumentAlreadyRevoked();
         
         // Mark document as invalid
         documents[_documentId].isValid = false;
@@ -153,8 +167,8 @@ contract IssuanceOfDocument {
      * @dev Reactivate revoked document
      */
     function reactivateDocument(bytes32 _documentId) external onlyAdmin {
-        require(documents[_documentId].createdAt != 0, "Document does not exist");
-        require(!documents[_documentId].isValid, "Document is already valid");
+        if (documents[_documentId].createdAt == 0) revert DocumentNotFound();
+        if (documents[_documentId].isValid) revert DocumentAlreadyValid();
         
         documents[_documentId].isValid = true;
         
@@ -177,7 +191,7 @@ contract IssuanceOfDocument {
         bool isValid
     ) {
         Document storage doc = documents[_documentId];
-        require(doc.createdAt != 0, "Document does not exist");
+        if (doc.createdAt == 0) revert DocumentNotFound();
         
         return (
             doc.tokenId,
@@ -201,7 +215,7 @@ contract IssuanceOfDocument {
         string memory documentType,
         bool isValid
     ) {
-        require(address(documentNFT) != address(0), "DocumentNFT not set");
+        if (address(documentNFT) == address(0)) revert DocumentNFTNotSet();
         
         (
             uint256 sid,
@@ -226,7 +240,7 @@ contract IssuanceOfDocument {
      * @dev Get all NFT token IDs of a student
      */
     function getStudentNFTs(uint256 _studentId) external view returns (uint256[] memory) {
-        require(address(documentNFT) != address(0), "DocumentNFT not set");
+        if (address(documentNFT) == address(0)) revert DocumentNFTNotSet();
         return documentNFT.getStudentTokens(_studentId);
     }
 
@@ -242,7 +256,7 @@ contract IssuanceOfDocument {
      * @dev Check if NFT is valid
      */
     function isNFTValid(uint256 _tokenId) external view returns (bool) {
-        require(address(documentNFT) != address(0), "DocumentNFT not set");
+        if (address(documentNFT) == address(0)) revert DocumentNFTNotSet();
         return documentNFT.isDocumentValid(_tokenId);
     }
 
@@ -271,8 +285,8 @@ contract IssuanceOfDocument {
      * @dev Update DataStorage address (only owner)
      */
     function updateDataStorage(address _newDataStorage) external {
-        require(msg.sender == dataStorage.owner(), "Only DataStorage owner");
-        require(_newDataStorage != address(0), "Invalid address");
+        if (msg.sender != dataStorage.owner()) revert Unauthorized();
+        if (_newDataStorage == address(0)) revert InvalidDataStorage();
         dataStorage = DataStorage(_newDataStorage);
     }
 }
