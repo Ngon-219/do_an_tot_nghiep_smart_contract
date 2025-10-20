@@ -1,0 +1,75 @@
+{
+  "metadata": {
+    "network": "sepolia",
+    "chainId": "11155111",
+    "deployedAt": "2025-10-20T16:26:37.476Z",
+    "deployerAddress": "0xC9c768801552B860bD74FB2Db060342ce48dc7CA",
+    "version": "1.0.0"
+  },
+  "architecture": {
+    "description": "Centralized DataStorage pattern with Factory deployment + NFT Documents",
+    "components": {
+      "core": "DataStorage - Single source of truth for all data",
+      "factory": "FactoryContract - Manages deployment and authorization",
+      "nft": "DocumentNFT - ERC-721 NFT for education documents",
+      "logic": [
+        "IssuanceOfDocument - Manager signs documents & mints NFTs",
+        "StudentViolation - Track violation points",
+        "VotingContract - Student voting system"
+      ]
+    },
+    "roles": [
+      "NONE",
+      "STUDENT",
+      "TEACHER",
+      "ADMIN",
+      "MANAGER"
+    ]
+  },
+  "contracts": {
+    "FactoryContract": "0x8C735C661FF60b51E234E7eacB6b5BE4d0dcb5Da",
+    "DataStorage": "0x11fB3ef512d9A2F09A897078ae75b30743e5cd2c",
+    "IssuanceOfDocument": "0xD241Feb6d2b9Db6DfCA0DDf0ca4a418F6BEfE71d",
+    "DocumentNFT": "0x86d8ddCA794DcE4C6Ad4749f66ceB12B95E7A8e4",
+    "StudentViolation": "0x4497D2F8eb5650984C03D8A0551758D4455AA8Aa",
+    "VotingContract": "0x57E2F0FB17226270c1095A83b98D24Aa90d7a3F1"
+  },
+  "systemInfo": {
+    "totalStudents": "0",
+    "totalManagers": "0",
+    "studentViolationInstances": "1",
+    "votingContractInstances": "1"
+  },
+  "quickStart": {
+    "1_add_manager": {
+      "contract": "DataStorage",
+      "function": "addManager(address)",
+      "description": "Add a manager who can sign documents"
+    },
+    "2_assign_teacher": {
+      "contract": "DataStorage",
+      "function": "assignRole(address, Role.TEACHER)",
+      "description": "Assign teacher role to user"
+    },
+    "3_register_students": {
+      "contract": "DataStorage",
+      "function": "registerStudent(...) or registerStudentsBatch(...)",
+      "description": "Register students to the system"
+    },
+    "4_initialize_violations": {
+      "contract": "StudentViolation",
+      "function": "initializeViolation(studentId, semester, points)",
+      "description": "Initialize violation points for students"
+    },
+    "5_sign_documents": {
+      "contract": "IssuanceOfDocument",
+      "function": "signDocument(hash, studentId, type, tokenURI)",
+      "description": "Manager signs documents and mints NFT to student wallet"
+    },
+    "6_create_voting": {
+      "contract": "VotingContract",
+      "function": "createVotingEvent(name, description, options, duration)",
+      "description": "Teacher/Manager creates voting events"
+    }
+  }
+}
